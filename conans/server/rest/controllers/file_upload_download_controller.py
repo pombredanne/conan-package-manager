@@ -4,7 +4,6 @@ from conans.server.service.service import FileUploadDownloadService
 import os
 from unicodedata import normalize
 import six
-from conans.errors import NotFoundException
 
 
 class FileUploadDownloadController(Controller):
@@ -29,15 +28,12 @@ class FileUploadDownloadController(Controller):
         @app.route(self.route + '/<filepath:path>', method=["PUT"])
         def put(filepath):
             token = request.query.get("signature", None)
-            if request.headers.get("X-Checksum-Sha1"):
-                raise NotFoundException()
             file_saver = ConanFileUpload(request.body, None,
                                          filename=os.path.basename(filepath),
                                          headers=request.headers)
             abs_path = os.path.abspath(os.path.join(storage_path, os.path.normpath(filepath)))
             # Body is a stringIO (generator)
             service.put_file(file_saver, abs_path, token, request.content_length)
-            return
 
 
 class ConanFileUpload(FileUpload):

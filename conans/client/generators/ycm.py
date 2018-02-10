@@ -1,5 +1,4 @@
 from conans.model import Generator
-from conans.paths import BUILD_INFO_YCM
 
 
 class YouCompleteMeGenerator(Generator):
@@ -112,7 +111,7 @@ def MakeRelativePathsInFlagsAbsolute( flags, working_directory ):
 
 def IsHeaderFile( filename ):
   extension = os.path.splitext( filename )[ 1 ]
-  return extension in [ '.h', '.hxx', '.hpp', '.hh' ]
+  return extension.lower() in [ '.h', '.hxx', '.hpp', '.hh' ]
 
 
 def GetCompilationInfoForFile( filename ):
@@ -158,14 +157,14 @@ def FlagsForFile( filename, **kwargs ):
   _logger.info("Final flags for %s are %s" % (filename, ' '.join(final_flags)))
 
   return {{
-    'flags': final_flags + ["-I/usr/include", "-I/usr/include/c++/5"],
+    'flags': final_flags + ["-I/usr/include", "-I/usr/include/c++/{cxx_version}"],
     'do_cache': True
   }}
 '''
 
     @property
     def filename(self):
-        return BUILD_INFO_YCM
+        return '.ycm_extra_conf.py'
 
     @property
     def content(self):
@@ -174,10 +173,14 @@ def FlagsForFile( filename, **kwargs ):
 
         flags = ['-x', 'c++']
         flags.extend(self.deps_build_info.cppflags)
-        flags.extend(self.build_info.cppflags)
         flags.extend(prefixed("-D", self.deps_build_info.defines))
-        flags.extend(prefixed("-D", self.build_info.defines))
-        flags.extend(prefixed("-I", self.build_info.include_paths))
         flags.extend(prefixed("-I", self.deps_build_info.include_paths))
 
-        return self.template.format(default_flags="'" + "', '".join(flags) + "'")
+        cxx_version = ''
+        try:
+            cxx_version = str(self.settings.compiler.version).split('.')[0]
+        except:
+            pass
+
+        return self.template.format(default_flags="'" + "', '".join(flags) + "'",
+                                    cxx_version=cxx_version)

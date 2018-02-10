@@ -1,8 +1,9 @@
 import unittest
-from conans.test.tools import TestClient
+from conans.test.utils.tools import TestClient
 import os
 from conans.model.ref import PackageReference, ConanFileReference
 from conans.util.files import load
+
 
 base_conanfile = '''
 from conans import ConanFile
@@ -22,11 +23,23 @@ class TestSystemReqs(ConanFile):
 
 class SystemReqsTest(unittest.TestCase):
 
+    def local_system_requirements_test(self):
+        client = TestClient()
+        files = {'conanfile.py': base_conanfile.replace("%GLOBAL%", "")}
+        client.save(files)
+        client.run("install .")
+        self.assertIn("*+Running system requirements+*", client.user_io.out)
+
+        files = {'conanfile.py': base_conanfile.replace("%GLOBAL%", "self.run('fake command!')")}
+        client.save(files)
+        with self.assertRaisesRegexp(Exception, "Command failed"):
+            client.run("install .")
+
     def per_package_test(self):
         client = TestClient()
         files = {'conanfile.py': base_conanfile.replace("%GLOBAL%", "")}
         client.save(files)
-        client.run("export user/testing")
+        client.run("export . user/testing")
         client.run("install Test/0.1@user/testing --build missing")
         self.assertIn("*+Running system requirements+*", client.user_io.out)
         conan_ref = ConanFileReference.loads("Test/0.1@user/testing")
@@ -65,7 +78,7 @@ class SystemReqsTest(unittest.TestCase):
         files = {'conanfile.py': base_conanfile.replace("%GLOBAL%",
                                                         "self.global_system_requirements=True")}
         client.save(files)
-        client.run("export user/testing")
+        client.run("export . user/testing")
         client.run("install Test/0.1@user/testing --build missing")
         self.assertIn("*+Running system requirements+*", client.user_io.out)
         conan_ref = ConanFileReference.loads("Test/0.1@user/testing")
@@ -101,7 +114,7 @@ class SystemReqsTest(unittest.TestCase):
         files = {'conanfile.py':
                  base_conanfile.replace("%GLOBAL%", "").replace('"Installed my stuff"', 'None')}
         client.save(files)
-        client.run("export user/testing")
+        client.run("export . user/testing")
         client.run("install Test/0.1@user/testing --build missing")
         self.assertIn("*+Running system requirements+*", client.user_io.out)
         conan_ref = ConanFileReference.loads("Test/0.1@user/testing")

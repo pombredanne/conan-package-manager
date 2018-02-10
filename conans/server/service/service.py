@@ -47,7 +47,7 @@ class FileUploadDownloadService(object):
             file_saver.save(os.path.dirname(abs_filepath))
 
         except (jwt.ExpiredSignature, jwt.DecodeError, AttributeError):
-            return NotFoundException("File not found")
+            raise NotFoundException("File not found")
 
     def _valid_path(self, filepath, encoded_path):
         if encoded_path == filepath:
@@ -59,6 +59,35 @@ class FileUploadDownloadService(object):
             return True
         else:
             return False
+
+
+class SearchService(object):
+
+    def __init__(self, authorizer, search_manager, auth_user):
+        self._authorizer = authorizer
+        self._search_manager = search_manager
+        self._auth_user = auth_user
+
+    def search_packages(self, reference, query):
+        self._authorizer.check_read_conan(self._auth_user, reference)
+        info = self._search_manager.search_packages(reference, query)
+        return info
+
+    def search(self, pattern=None, ignorecase=True):
+        """ Get all the info about any package
+            Attributes:
+                pattern = wildcards like opencv/*
+        """
+        references = self._search_manager.search_recipes(pattern, ignorecase)
+        filtered = []
+        # Filter out restricted items
+        for conan_ref in references:
+            try:
+                self._authorizer.check_read_conan(self._auth_user, conan_ref)
+                filtered.append(conan_ref)
+            except ForbiddenException:
+                pass
+        return filtered
 
 
 class ConanService(object):
@@ -154,28 +183,6 @@ class ConanService(object):
         urls = self._file_manager.get_upload_package_urls(package_reference,
                                                           filesizes, self._auth_user)
         return urls
-
-    def search(self, pattern=None, ignorecase=True):
-        """ Get all the info about any package
-            Attributes:
-                pattern = wildcards like opencv/*
-        """
-        info = self._file_manager.search(pattern, ignorecase)
-
-        # Filter out restricted items
-        for conan_ref in list(info.keys()):
-            try:
-                self._authorizer.check_read_conan(self._auth_user, conan_ref)
-                conan_search_info = info[conan_ref]
-                for package_id in list(conan_search_info.keys()):
-                    package_ref = PackageReference(conan_ref, package_id)
-                    try:
-                        self._authorizer.check_read_package(self._auth_user, package_ref)
-                    except ForbiddenException:
-                        conan_search_info.pop(package_id)
-            except ForbiddenException:
-                info.pop(conan_ref)
-        return info
 
 
 def _validate_conan_reg_filenames(files):

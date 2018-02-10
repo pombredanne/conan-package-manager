@@ -1,5 +1,5 @@
 import unittest
-from conans.test.tools import TestServer, TestClient
+from conans.test.utils.tools import TestServer, TestClient
 from conans.paths import CONANFILE
 from conans.test.utils.cpp_test_files import cpp_hello_conan_files
 from collections import OrderedDict
@@ -21,7 +21,7 @@ class MultiRemotesTest(unittest.TestCase):
         files = {CONANFILE: files[CONANFILE].replace("config(", "config2(") + modifier}
         client.save(files, clean_first=True)
         if export:
-            client.run("export lasote/stable")
+            client.run("export . lasote/stable")
 
     def conan_test_test(self):
         '''Checks --build in test command'''

@@ -1,4 +1,4 @@
-'''
+"""
 Collaborate with RestApiClient to make remote anonymous and authenticated calls.
 Uses user_io to request user's login and password and obtain a token for calling authenticated
 methods if receives AuthenticationException from RestApiClient.
@@ -10,8 +10,7 @@ Flow:
     if receives AuthenticationException (not open method) will ask user for login and password
     and will invoke RestApiClient.get_token() (with LOGIN_RETRIES retries) and retry to call
     get_conan with the new token.
-'''
-
+"""
 
 from conans.errors import AuthenticationException, ForbiddenException,\
     ConanException
@@ -32,6 +31,8 @@ def input_credentials_if_unauthorized(func):
             ret = func(self, *args, **kwargs)
             return ret
         except ForbiddenException:
+            raise ForbiddenException("Permission denied for user: '%s'" % self.user)
+        except AuthenticationException:
             # User valid but not enough permissions
             if self.user is None or self._rest_client.token is None:
                 # token is None when you change user with user command
@@ -39,22 +40,19 @@ def input_credentials_if_unauthorized(func):
                 remote = self.remote
                 self._user_io.out.info('Please log in to "%s" to perform this action. '
                                        'Execute "conan user" command.' % remote.name)
-                if remote.name == "conan.io":
+                if "bintray" in remote.url:
                     self._user_io.out.info('If you don\'t have an account sign up here: '
-                                           'http://www.conan.io')
+                                           'https://bintray.com/signup/oss')
                 return retry_with_new_token(self, *args, **kwargs)
             else:
-                # If our user receives a ForbiddenException propagate it, not
-                # log with other user
-                raise ForbiddenException("Permission denied for user: '%s'" % self.user)
-        except AuthenticationException:
-            # Token expired or not valid, so clean the token and repeat the call
-            # (will be anonymous call but exporting who is calling)
-            self._store_login((self.user, None))
-            self._rest_client.token = None
-            # Set custom headers of mac_digest and username
-            self.set_custom_headers(self.user)
-            return wrapper(self, *args, **kwargs)
+                # Token expired or not valid, so clean the token and repeat the call
+                # (will be anonymous call but exporting who is calling)
+                logger.info("Token expired or not valid, cleaning the saved token and retrying")
+                self._store_login((self.user, None))
+                self._rest_client.token = None
+                # Set custom headers of mac_digest and username
+                self.set_custom_headers(self.user)
+                return wrapper(self, *args, **kwargs)
 
     def retry_with_new_token(self, *args, **kwargs):
         """Try LOGIN_RETRIES to obtain a password from user input for which
@@ -80,7 +78,7 @@ def input_credentials_if_unauthorized(func):
                 self._store_login((user, token))
                 # Set custom headers of mac_digest and username
                 self.set_custom_headers(user)
-                return func(self, *args, **kwargs)
+                return wrapper(self, *args, **kwargs)
 
         raise AuthenticationException("Too many failed login attempts, bye!")
     return wrapper
@@ -102,6 +100,7 @@ class ConanApiAuthManager(object):
     def remote(self, remote):
         self._remote = remote
         self._rest_client.remote_url = remote.url
+        self._rest_client.verify_ssl = remote.verify_ssl
         self.user, self._rest_client.token = self._localdb.get_login(remote.url)
 
     def _store_login(self, login):
@@ -128,12 +127,13 @@ class ConanApiAuthManager(object):
     # ######### CONAN API METHODS ##########
 
     @input_credentials_if_unauthorized
-    def upload_conan(self, conan_reference, the_files):
-        return self._rest_client.upload_conan(conan_reference, the_files)
+    def upload_recipe(self, conan_reference, the_files, retry, retry_wait, ignore_deleted_file):
+        return self._rest_client.upload_recipe(conan_reference, the_files, retry, retry_wait,
+                                               ignore_deleted_file)
 
     @input_credentials_if_unauthorized
-    def upload_package(self, package_reference, the_files):
-        return self._rest_client.upload_package(package_reference, the_files)
+    def upload_package(self, package_reference, the_files, retry, retry_wait):
+        return self._rest_client.upload_package(package_reference, the_files, retry, retry_wait)
 
     @input_credentials_if_unauthorized
     def get_conan_digest(self, conan_reference):
@@ -144,16 +144,24 @@ class ConanApiAuthManager(object):
         return self._rest_client.get_package_digest(package_reference)
 
     @input_credentials_if_unauthorized
-    def get_conanfile(self, conan_reference):
-        return self._rest_client.get_conanfile(conan_reference)
+    def get_recipe(self, conan_reference, dest_folder, filter_function):
+        return self._rest_client.get_recipe(conan_reference, dest_folder, filter_function)
 
     @input_credentials_if_unauthorized
-    def get_package(self, package_reference):
-        return self._rest_client.get_package(package_reference)
+    def get_package(self, package_reference, dest_folder):
+        return self._rest_client.get_package(package_reference, dest_folder)
+
+    @input_credentials_if_unauthorized
+    def get_package_info(self, package_reference):
+        return self._rest_client.get_package_info(package_reference)
 
     @input_credentials_if_unauthorized
     def search(self, pattern, ignorecase):
         return self._rest_client.search(pattern, ignorecase)
+
+    @input_credentials_if_unauthorized
+    def search_packages(self, reference, query):
+        return self._rest_client.search_packages(reference, query)
 
     @input_credentials_if_unauthorized
     def remove(self, conan_refernce):
@@ -162,6 +170,10 @@ class ConanApiAuthManager(object):
     @input_credentials_if_unauthorized
     def remove_packages(self, conan_reference, package_ids):
         return self._rest_client.remove_packages(conan_reference, package_ids)
+
+    @input_credentials_if_unauthorized
+    def get_path(self, conan_reference, path, package_id):
+        return self._rest_client.get_path(conan_reference, path, package_id)
 
     def authenticate(self, user, password):
         remote_url = self._remote.url

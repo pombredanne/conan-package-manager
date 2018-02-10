@@ -3,7 +3,7 @@ import os
 from conans.paths import CONANFILE
 from conans.model.ref import ConanFileReference
 from conans.test.utils.cpp_test_files import cpp_hello_conan_files
-from conans.test.tools import TestClient
+from conans.test.utils.tools import TestClient
 import platform
 
 
@@ -20,16 +20,17 @@ class ExportDirtyTest(unittest.TestCase):
         files = cpp_hello_conan_files("Hello0", "0.1", build=False)
 
         self.client.save(files)
-        self.client.run("export lasote/stable")
+        self.client.run("export . lasote/stable")
         self.client.run("install Hello0/0.1@lasote/stable --build")
         ref = ConanFileReference.loads("Hello0/0.1@lasote/stable")
         source_path = self.client.paths.source(ref)
         file_open = os.path.join(source_path, "main.cpp")
 
-        self.f = open(file_open, 'rb')
+        self.f = open(file_open, 'wb')
+        self.f.write(b"Hello world")
         files[CONANFILE] = files[CONANFILE].replace("build2(", "build3(")
         self.client.save(files)
-        self.client.run("export lasote/stable")
+        self.client.run("export . lasote/stable")
         self.assertIn("ERROR: Unable to delete source folder. "
                       "Will be marked as dirty for deletion",
                       self.client.user_io.out)
@@ -44,7 +45,7 @@ class ExportDirtyTest(unittest.TestCase):
         if platform.system() != "Windows":
             return
         self.f.close()
-        self.client.run("export lasote/stable")
+        self.client.run("export . lasote/stable")
         self.assertIn("Source folder is dirty, forcing removal", self.client.user_io.out)
         err = self.client.run("install Hello0/0.1@lasote/stable --build")
         self.assertFalse(err)

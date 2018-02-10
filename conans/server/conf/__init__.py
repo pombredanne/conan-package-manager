@@ -1,7 +1,9 @@
 """
 Server's configuration variables
 """
+import six
 
+from conans import tools
 from conans.util.env_reader import get_env
 from datetime import timedelta
 import os
@@ -11,12 +13,12 @@ from conans.errors import ConanException
 from conans.util.files import save, mkdir
 from six.moves.configparser import ConfigParser, NoSectionError
 from conans.paths import SimplePaths, conan_expand_user
-from conans.server.store.disk_adapter import DiskAdapter
+from conans.server.store.disk_adapter import ServerDiskAdapter
 from conans.server.store.file_manager import FileManager
 from conans.util.log import logger
 from conans.server.conf.default_server_conf import default_server_conf
 
-MIN_CLIENT_COMPATIBLE_VERSION = '0.8.0'
+MIN_CLIENT_COMPATIBLE_VERSION = '0.25.0'
 
 
 class ConanServerConfigParser(ConfigParser):
@@ -42,6 +44,7 @@ class ConanServerConfigParser(ConfigParser):
                            "port": get_env("CONAN_SERVER_PORT", None, environment),
                            "public_port": get_env("CONAN_SERVER_PUBLIC_PORT", None, environment),
                            "host_name": get_env("CONAN_HOST_NAME", None, environment),
+                           "custom_authenticator": get_env("CONAN_CUSTOM_AUTHENTICATOR", None, environment),
                            # "user:pass,user2:pass2"
                            "users": get_env("CONAN_SERVER_USERS", None, environment)}
 
@@ -57,7 +60,11 @@ class ConanServerConfigParser(ConfigParser):
 
             if not self._loaded:
                 self._loaded = True
-                self.read(self.config_filename)
+                # To avoid encoding problems we use our tools.load
+                if six.PY3:
+                    self.read_string(tools.load(self.config_filename))
+                else:
+                    self.read(self.config_filename)
 
             if varname:
                 section = dict(self.items(section))
@@ -137,12 +144,20 @@ class ConanServerConfigParser(ConfigParser):
             return self._get_file_conf("write_permissions")
 
     @property
+    def custom_authenticator(self):
+        try:
+            return self._get_conf_server_string("custom_authenticator")
+        except ConanException:
+            return None
+
+    @property
     def users(self):
         def validate_pass_encoding(password):
             try:
                 password.encode('ascii')
             except (UnicodeDecodeError, UnicodeEncodeError):
-                raise ConanException("Password contains invalid characters. Only ASCII encoding is supported")
+                raise ConanException("Password contains invalid characters. "
+                                     "Only ASCII encoding is supported")
             return password
 
         if self.env_config["users"]:
@@ -203,11 +218,11 @@ def get_file_manager(config, public_url=None, updown_auth_manager=None):
         disk_controller_url = "%s/%s" % (public_url, "files")
         if not updown_auth_manager:
             raise Exception("Updown auth manager needed for disk controller (not s3)")
-        adapter = DiskAdapter(disk_controller_url, config.disk_storage_path, updown_auth_manager)
+        adapter = ServerDiskAdapter(disk_controller_url, config.disk_storage_path, updown_auth_manager)
         paths = SimplePaths(config.disk_storage_path)
     else:
-        # Want to develop new adapter? create a subclass of 
-        # conans.server.store.file_manager.StorageAdapter and implement the abstract methods
+        # Want to develop new adapter? create a subclass of
+        # conans.server.store.file_manager.ServerStorageAdapter and implement the abstract methods
         raise Exception("Store adapter not implemented! Change 'store_adapter' "
                         "variable in server.conf file to one of the available options: 'disk' ")
     return FileManager(paths, adapter)

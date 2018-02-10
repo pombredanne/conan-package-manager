@@ -4,7 +4,7 @@ from conans.util.files import load
 from conans.model.ref import ConanFileReference
 from conans.test.utils.cpp_test_files import cpp_hello_conan_files
 from conans.model.manifest import FileTreeManifest
-from conans.test.tools import TestClient
+from conans.test.utils.tools import TestClient
 from conans.test.utils.test_files import temp_folder
 
 
@@ -17,7 +17,7 @@ class ExportPathTest(unittest.TestCase):
         files = cpp_hello_conan_files("Hello0", "0.1")
         conan_ref = ConanFileReference("Hello0", "0.1", "lasote", "stable")
         client.save(files, path=source_folder)
-        client.run("export lasote/stable --path=source")
+        client.run("export source lasote/stable")
         reg_path = client.paths.export(conan_ref)
         manif = FileTreeManifest.loads(load(client.paths.digestfile_conanfile(conan_ref)))
 
@@ -31,8 +31,8 @@ class ExportPathTest(unittest.TestCase):
 
         expected_sums = {'hello.cpp': '4f005274b2fdb25e6113b69774dac184',
                          'main.cpp': '0479f3c223c9a656a718f3148e044124',
-                         'CMakeLists.txt': 'bc3405da4bb0b51a3b9f05aca71e58c8',
-                         'conanfile.py': '5632cf850a7161388ab24f42b9bdb3fd',
+                         'CMakeLists.txt': '52546396c42f16be3daf72ecf7ab7143',
+                         'conanfile.py': '355949fbf0b4fc32b8f1c5a338dfe1ae',
                          'executable': '68b329da9893e34099c7d8ad5cb9c940',
                          'helloHello0.h': '9448df034392fc8781a47dd03ae71bdd'}
         self.assertEqual(expected_sums, manif.file_sums)
@@ -46,7 +46,7 @@ class ExportPathTest(unittest.TestCase):
         files = cpp_hello_conan_files("Hello0", "0.1")
         conan_ref = ConanFileReference("Hello0", "0.1", "lasote", "stable")
         client.save(files, path=source_folder)
-        client.run("export lasote/stable --path=../source")
+        client.run("export ../source lasote/stable")
         reg_path = client.paths.export(conan_ref)
         manif = FileTreeManifest.loads(load(client.paths.digestfile_conanfile(conan_ref)))
 
@@ -60,8 +60,8 @@ class ExportPathTest(unittest.TestCase):
 
         expected_sums = {'hello.cpp': '4f005274b2fdb25e6113b69774dac184',
                          'main.cpp': '0479f3c223c9a656a718f3148e044124',
-                         'CMakeLists.txt': 'bc3405da4bb0b51a3b9f05aca71e58c8',
-                         'conanfile.py': '5632cf850a7161388ab24f42b9bdb3fd',
+                         'CMakeLists.txt': '52546396c42f16be3daf72ecf7ab7143',
+                         'conanfile.py': '355949fbf0b4fc32b8f1c5a338dfe1ae',
                          'executable': '68b329da9893e34099c7d8ad5cb9c940',
                          'helloHello0.h': '9448df034392fc8781a47dd03ae71bdd'}
         self.assertEqual(expected_sums, manif.file_sums)
@@ -78,7 +78,7 @@ class ExportPathTest(unittest.TestCase):
         conanfile = conanfile.replace("exports = '*'", 'exports = "../source*"')
 
         client.save({"conanfile.py": conanfile})
-        client.run("export lasote/stable")
+        client.run("export . lasote/stable")
         reg_path = client.paths.export(conan_ref)
         manif = FileTreeManifest.loads(load(client.paths.digestfile_conanfile(conan_ref)))
 
@@ -94,8 +94,8 @@ class ExportPathTest(unittest.TestCase):
 
         expected_sums = {'source/hello.cpp': '4f005274b2fdb25e6113b69774dac184',
                          'source/main.cpp': '0479f3c223c9a656a718f3148e044124',
-                         'source/CMakeLists.txt': 'bc3405da4bb0b51a3b9f05aca71e58c8',
-                         'conanfile.py': 'c0bb94a3da6eb978cb94f5faff037ed3',
+                         'source/CMakeLists.txt': '52546396c42f16be3daf72ecf7ab7143',
+                         'conanfile.py': '3ac566eb5b2e4df4417003f0e606e237',
                          'source/executable': '68b329da9893e34099c7d8ad5cb9c940',
                          'source/helloHello0.h': '9448df034392fc8781a47dd03ae71bdd'}
         self.assertEqual(expected_sums, manif.file_sums)
@@ -115,7 +115,7 @@ class ExportPathTest(unittest.TestCase):
         conanfile = conanfile.replace("exports = '*'", 'exports = "../source*"')
 
         client.save({"conanfile.py": conanfile}, path=conanfile_folder)
-        client.run("export lasote/stable --path=../conan")
+        client.run("export ../conan lasote/stable")
         reg_path = client.paths.export(conan_ref)
         manif = FileTreeManifest.loads(load(client.paths.digestfile_conanfile(conan_ref)))
 
@@ -131,8 +131,8 @@ class ExportPathTest(unittest.TestCase):
 
         expected_sums = {'source/hello.cpp': '4f005274b2fdb25e6113b69774dac184',
                          'source/main.cpp': '0479f3c223c9a656a718f3148e044124',
-                         'source/CMakeLists.txt': 'bc3405da4bb0b51a3b9f05aca71e58c8',
-                         'conanfile.py': 'c0bb94a3da6eb978cb94f5faff037ed3',
+                         'source/CMakeLists.txt': '52546396c42f16be3daf72ecf7ab7143',
+                         'conanfile.py': '3ac566eb5b2e4df4417003f0e606e237',
                          'source/executable': '68b329da9893e34099c7d8ad5cb9c940',
                          'source/helloHello0.h': '9448df034392fc8781a47dd03ae71bdd'}
         self.assertEqual(expected_sums, manif.file_sums)

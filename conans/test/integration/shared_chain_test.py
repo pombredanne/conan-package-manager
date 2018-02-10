@@ -1,5 +1,5 @@
 import unittest
-from conans.test.tools import TestServer, TestClient
+from conans.test.utils.tools import TestServer, TestClient
 from conans.test.utils.cpp_test_files import cpp_hello_conan_files
 from conans.model.ref import ConanFileReference
 from nose.plugins.attrib import attr
@@ -23,7 +23,7 @@ class SharedChainTest(unittest.TestCase):
         conan_ref = ConanFileReference(name, version, "lasote", "stable")
         conan.save(files, clean_first=True)
 
-        conan.run("export lasote/stable")
+        conan.run("export . lasote/stable")
         conan.run("install '%s' --build missing" % str(conan_ref))
         conan.run("upload %s --all" % str(conan_ref))
         rmdir(conan.current_folder)

@@ -1,14 +1,22 @@
 import os
 from conans.model.ref import ConanFileReference, PackageReference
-from conans.util.files import load, relative_dirs, path_exists, save
-from os.path import isfile
 from os.path import join, normpath
-from conans.model.manifest import FileTreeManifest
 import platform
-import tempfile
+from conans.errors import ConanException
+from conans.util.files import rmdir
+
+
+if platform.system() == "Windows":
+    from conans.util.windows import path_shortener, rm_conandir, conan_expand_user
+else:
+    def path_shortener(x, _):
+        return x
+    conan_expand_user = os.path.expanduser
+    rm_conandir = rmdir
 
 
 EXPORT_FOLDER = "export"
+EXPORT_SRC_FOLDER = "export_source"
 SRC_FOLDER = "source"
 BUILD_FOLDER = "build"
 PACKAGES_FOLDER = "package"
@@ -25,52 +33,56 @@ BUILD_INFO_QMAKE = 'conanbuildinfo.pri'
 BUILD_INFO_QBS = 'conanbuildinfo.qbs'
 BUILD_INFO_VISUAL_STUDIO = 'conanbuildinfo.props'
 BUILD_INFO_XCODE = 'conanbuildinfo.xcconfig'
-BUILD_INFO_YCM = '.ycm_extra_conf.py'
 CONANINFO = "conaninfo.txt"
+CONANENV = "conanenv.txt"
 SYSTEM_REQS = "system_reqs.txt"
-DIRTY_FILE = ".conan_dirty"
+PUT_HEADERS = "artifacts.properties"
 
 PACKAGE_TGZ_NAME = "conan_package.tgz"
 EXPORT_TGZ_NAME = "conan_export.tgz"
+EXPORT_SOURCES_TGZ_NAME = "conan_sources.tgz"
+EXPORT_SOURCES_DIR_OLD = ".c_src"
+
+RUN_LOG_NAME = "conan_run.log"
+
+DEFAULT_PROFILE_NAME = "default"
 
 
-def conan_expand_user(path):
-    """ wrapper to the original expanduser function, to workaround python returning
-    verbatim %USERPROFILE% when some other app (git for windows) sets HOME envvar
-    """
-    if platform.system() == "Windows":
-        # In win these variables should exist and point to user directory, which
-        # must exist. Using context to avoid permanent modification of os.environ
-        old_env = dict(os.environ)
-        try:
-            home = os.environ.get("HOME")
-            if home and not os.path.exists(home):
-                del os.environ["HOME"]
-            result = os.path.expanduser(path)
-        finally:
-            os.environ.clear()
-            os.environ.update(old_env)
-        return result
-
-    return os.path.expanduser(path)
+def get_conan_user_home():
+    tmp = conan_expand_user(os.getenv("CONAN_USER_HOME", "~"))
+    if not os.path.isabs(tmp):
+        raise Exception("Invalid CONAN_USER_HOME value '%s', "
+                        "please specify an absolute or path starting with ~/ "
+                        "(relative to user home)" % tmp)
+    return os.path.abspath(tmp)
 
 
-def shortener(path, shorten):
-    if not shorten:
-        return path
-    link = os.path.join(path, ".conan_link")
-    if os.path.exists(link):
-        return load(link)
+def is_case_insensitive_os():
+    system = platform.system()
+    return system != "Linux" and system != "FreeBSD" and system != "SunOS"
 
-    drive = os.path.splitdrive(path)[0]
-    short_path = drive + "/.conan"
-    try:
-        os.makedirs(short_path)
-    except:
+
+if is_case_insensitive_os():
+    def _check_ref_case(conan_reference, conan_folder, store_folder):
+        if not os.path.exists(conan_folder):  # If it doesn't exist, not a problem
+            return
+        # If exists, lets check path
+        tmp = store_folder
+        for part in conan_reference:
+            items = os.listdir(tmp)
+            if part not in items:
+                offending = ""
+                for item in items:
+                    if item.lower() == part.lower():
+                        offending = item
+                        break
+                raise ConanException("Requested '%s' but found case incompatible '%s'\n"
+                                     "Case insensitive filesystem can't manage this"
+                                     % (str(conan_reference), offending))
+            tmp = os.path.normpath(tmp + os.sep + part)
+else:
+    def _check_ref_case(conan_reference, conan_folder, store_folder):  # @UnusedVariable
         pass
-    redirect = tempfile.mkdtemp(dir=short_path)
-    save(link, redirect)
-    return redirect
 
 
 class SimplePaths(object):
@@ -80,10 +92,6 @@ class SimplePaths(object):
     """
     def __init__(self, store_folder):
         self._store_folder = store_folder
-        if platform.system() == "Windows":
-            self._shortener = shortener
-        else:
-            self._shortener = lambda x, _: x
 
     @property
     def store(self):
@@ -99,32 +107,39 @@ class SimplePaths(object):
         assert isinstance(conan_reference, ConanFileReference)
         return normpath(join(self.conan(conan_reference), EXPORT_FOLDER))
 
-    def source(self, conan_reference, shorten=False):
+    def export_sources(self, conan_reference, short_paths=False):
+        assert isinstance(conan_reference, ConanFileReference)
+        p = normpath(join(self.conan(conan_reference), EXPORT_SRC_FOLDER))
+        return path_shortener(p, short_paths)
+
+    def source(self, conan_reference, short_paths=False):
         assert isinstance(conan_reference, ConanFileReference)
         p = normpath(join(self.conan(conan_reference), SRC_FOLDER))
-        return self._shortener(p, shorten)
+        return path_shortener(p, short_paths)
 
     def conanfile(self, conan_reference):
         export = self.export(conan_reference)
+        _check_ref_case(conan_reference, export, self.store)
         return normpath(join(export, CONANFILE))
 
     def digestfile_conanfile(self, conan_reference):
         export = self.export(conan_reference)
+        _check_ref_case(conan_reference, export, self.store)
         return normpath(join(export, CONAN_MANIFEST))
 
-    def digestfile_package(self, package_reference):
+    def digestfile_package(self, package_reference, short_paths=False):
         assert isinstance(package_reference, PackageReference)
-        return normpath(join(self.package(package_reference), CONAN_MANIFEST))
+        return normpath(join(self.package(package_reference, short_paths), CONAN_MANIFEST))
 
     def builds(self, conan_reference):
         assert isinstance(conan_reference, ConanFileReference)
         return normpath(join(self.conan(conan_reference), BUILD_FOLDER))
 
-    def build(self, package_reference, shorten=False):
+    def build(self, package_reference, short_paths=False):
         assert isinstance(package_reference, PackageReference)
         p = normpath(join(self.conan(package_reference.conan), BUILD_FOLDER,
                           package_reference.package_id))
-        return self._shortener(p, shorten)
+        return path_shortener(p, short_paths)
 
     def system_reqs(self, conan_reference):
         assert isinstance(conan_reference, ConanFileReference)
@@ -139,53 +154,8 @@ class SimplePaths(object):
         assert isinstance(conan_reference, ConanFileReference)
         return normpath(join(self.conan(conan_reference), PACKAGES_FOLDER))
 
-    def package(self, package_reference):
+    def package(self, package_reference, short_paths=False):
         assert isinstance(package_reference, PackageReference)
-        return normpath(join(self.conan(package_reference.conan), PACKAGES_FOLDER,
-                             package_reference.package_id))
-
-
-# FIXME: Move to client, Should not be necessary in server anymore. Replaced with disk_adapter
-class StorePaths(SimplePaths):
-    """ Disk storage of conans and binary packages. Useful both in client and
-    in server. Accesses to real disk and reads/write things.
-    """
-
-    def export_paths(self, conan_reference):
-        ''' Returns all file paths for a conans (relative to conans directory)'''
-        return relative_dirs(self.export(conan_reference))
-
-    def package_paths(self, package_reference):
-        ''' Returns all file paths for a package (relative to conans directory)'''
-        return relative_dirs(self.package(package_reference))
-
-    def conan_packages(self, conan_reference):
-        """ Returns a list of package_id from a conans """
-        assert isinstance(conan_reference, ConanFileReference)
-        packages_dir = self.packages(conan_reference)
-        try:
-            packages = [dirname for dirname in os.listdir(packages_dir)
-                        if not isfile(os.path.join(packages_dir, dirname))]
-        except:  # if there isn't any package folder
-            packages = []
-        return packages
-
-    def load_digest(self, conan_reference):
-        '''conan_id = sha(zip file)'''
-        filename = os.path.join(self.export(conan_reference), CONAN_MANIFEST)
-        return FileTreeManifest.loads(load(filename))
-
-    def conan_manifests(self, conan_reference):
-        digest_path = self.digestfile_conanfile(conan_reference)
-        return self._digests(digest_path)
-
-    def package_manifests(self, package_reference):
-        digest_path = self.digestfile_package(package_reference)
-        return self._digests(digest_path)
-
-    def _digests(self, digest_path):
-        if not path_exists(digest_path, self.store):
-            return None, None
-        readed_digest = FileTreeManifest.loads(load(digest_path))
-        expected_digest = FileTreeManifest.create(os.path.dirname(digest_path))
-        return readed_digest, expected_digest
+        p = normpath(join(self.conan(package_reference.conan), PACKAGES_FOLDER,
+                          package_reference.package_id))
+        return path_shortener(p, short_paths)
